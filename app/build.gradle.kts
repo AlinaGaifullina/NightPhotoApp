@@ -51,6 +51,7 @@ android {
 
 dependencies {
 
+    implementation(libs.androidx.lifecycle.runtime.compose.android)
     // koin
     val koin_version = "3.5.6"
     implementation("io.insert-koin:koin-android:$koin_version")
@@ -60,6 +61,14 @@ dependencies {
     // navigation
     val nav_version = "2.7.7"
     implementation("androidx.navigation:navigation-compose:$nav_version")
+
+    // cameraX
+    val camerax_version = "1.4.0-beta02"
+    implementation("androidx.camera:camera-camera2:$camerax_version")
+    implementation("androidx.camera:camera-lifecycle:$camerax_version")
+    implementation("androidx.camera:camera-view:$camerax_version")
+    implementation("androidx.camera:camera-core:$camerax_version")
+    //implementation("androidx.camera:camera-camera:$camerax_version")
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
