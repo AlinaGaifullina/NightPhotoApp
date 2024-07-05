@@ -1,5 +1,7 @@
 package ru.itis.nightphotoapp.ui.screens.settings
 
+import android.preference.PreferenceDataStore
+import androidx.datastore.core.DataStore
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -19,7 +21,7 @@ sealed interface SettingsSideEffect {
 }
 
 sealed interface SettingsEvent {
-    object OnIsSaveSeriesChanged : SettingsEvent
+    data class OnCheckboxClick(val status: Boolean) : SettingsEvent
     object OnBackButtonClick : SettingsEvent
     data class OnPathChanged(val path: String) : SettingsEvent
 }
@@ -36,7 +38,7 @@ class SettingsViewModel(
 
     fun event(settingsEvent: SettingsEvent) {
         when (settingsEvent) {
-            SettingsEvent.OnIsSaveSeriesChanged -> onIsSaveSeriesChanged()
+            is SettingsEvent.OnCheckboxClick -> onCheckboxClick(settingsEvent.status)
             SettingsEvent.OnBackButtonClick -> onBackButtonClick()
             is SettingsEvent.OnPathChanged -> onPathChanged(settingsEvent.path)
         }
@@ -51,11 +53,11 @@ class SettingsViewModel(
         }
     }
 
-    private fun onIsSaveSeriesChanged() {
-        val isSaveSeries = _state.value.isSaveSeries
+    private fun onCheckboxClick(status: Boolean) {
+        //val isSaveSeries = _state.value.isSaveSeries
         _state.tryEmit(
             _state.value.copy(
-                isSaveSeries = isSaveSeries
+                isSaveSeries = !status
             )
         )
     }

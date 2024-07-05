@@ -1,5 +1,7 @@
 package ru.itis.nightphotoapp.ui.screens.camera
 
+import android.hardware.camera2.CameraCaptureSession
+import android.hardware.camera2.CaptureRequest
 import androidx.camera.view.LifecycleCameraController
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -18,6 +20,8 @@ data class CameraState(
     val shutterSpeed: String = "",
     val isAutoMode: Boolean = true,
     val blockedSettings: List<Int> = emptyList(),
+    val capReq: CaptureRequest.Builder? = null,
+    val cameraCaptureSession: CameraCaptureSession? = null
 )
 
 sealed interface CameraSideEffect {
@@ -30,6 +34,8 @@ sealed interface CameraEvent {
     object OnShutterSpeedButtonClick : CameraEvent
     object OnSettingsClick : CameraEvent
     data class OnIsoChanged(val iso: Int) : CameraEvent
+    data class OnCaptureCreate(val capReq: CaptureRequest.Builder) : CameraEvent
+    data class OnCameraCaptureSession(val cameraCaptureSession: CameraCaptureSession) : CameraEvent
     data class OnShutterSpeedChanged(val shutterSpeed: String) : CameraEvent
 }
 
@@ -52,6 +58,8 @@ class CameraViewModel(
             CameraEvent.OnShutterSpeedButtonClick -> onShutterSpeedButtonClick()
             CameraEvent.OnSettingsClick -> onSettingsClick()
             is CameraEvent.OnIsoChanged -> onIsoChanged(cameraEvent.iso)
+            is CameraEvent.OnCaptureCreate -> onCaptureCreate(cameraEvent.capReq)
+            is CameraEvent.OnCameraCaptureSession -> onCameraCaptureSession(cameraEvent.cameraCaptureSession)
             is CameraEvent.OnShutterSpeedChanged -> onShutterSpeedChanged(cameraEvent.shutterSpeed)
 
         }
@@ -64,6 +72,22 @@ class CameraViewModel(
                 CameraSideEffect.NavigateToSettingsScreen
             )
         }
+    }
+
+    private fun onCaptureCreate(capReq: CaptureRequest.Builder) {
+        _state.tryEmit(
+            _state.value.copy(
+                capReq = capReq
+            )
+        )
+    }
+
+    private fun onCameraCaptureSession(cameraCaptureSession: CameraCaptureSession) {
+        _state.tryEmit(
+            _state.value.copy(
+                cameraCaptureSession = cameraCaptureSession
+            )
+        )
     }
 
     private fun onChangeModeClick() {

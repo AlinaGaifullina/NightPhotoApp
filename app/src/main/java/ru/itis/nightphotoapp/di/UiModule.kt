@@ -9,11 +9,13 @@ import ru.itis.nightphotoapp.domain.repository.CameraRepository
 import ru.itis.nightphotoapp.ui.screens.camera.CameraViewModel
 import ru.itis.nightphotoapp.ui.screens.settings.SettingsViewModel
 
+
 val uiModule = module {
 
     single<Application> { androidContext().applicationContext as Application }
 
     single<CameraRepository> { CameraRepositoryImpl(get()) }
+
 
     viewModel {
         CameraViewModel(get())

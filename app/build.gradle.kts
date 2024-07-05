@@ -52,6 +52,7 @@ android {
 dependencies {
 
     implementation(libs.androidx.lifecycle.runtime.compose.android)
+    implementation(libs.androidx.material3.android)
     // koin
     val koin_version = "3.5.6"
     implementation("io.insert-koin:koin-android:$koin_version")
@@ -70,6 +71,10 @@ dependencies {
     implementation("androidx.camera:camera-core:$camerax_version")
     //implementation("androidx.camera:camera-camera:$camerax_version")
 
+    // DataStore
+    implementation("androidx.datastore:datastore-preferences:1.1.1")
+    implementation("androidx.datastore:datastore-preferences-core:1.1.1")
+
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
@@ -77,7 +82,7 @@ dependencies {
     implementation(libs.androidx.ui)
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
-    implementation(libs.androidx.material3)
+    //implementation(libs.androidx.material3)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
