@@ -94,11 +94,6 @@ class MainActivity : ComponentActivity() {
 
 
 
-//        fun stopBackgroundThread() {
-//            backgroundHandlerThread.quitSafely()
-//            backgroundHandlerThread.join()
-//        }
-
 
 
         setContent {
@@ -107,18 +102,6 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    val controller = remember {
-                        LifecycleCameraController(
-                            applicationContext
-                        ).apply {
-                            setEnabledUseCases(
-                                CameraController.IMAGE_CAPTURE or
-                                        CameraController.VIDEO_CAPTURE
-                            )
-                        }
-                    }
-
-
                     val navController = rememberNavController()
                     RootNavGraph(navController = navController, this.applicationContext)
                 }
