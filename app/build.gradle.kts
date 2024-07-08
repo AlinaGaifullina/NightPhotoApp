@@ -53,6 +53,7 @@ dependencies {
 
     implementation(libs.androidx.lifecycle.runtime.compose.android)
     implementation(libs.androidx.material3.android)
+    implementation(libs.androidx.exifinterface)
     // koin
     val koin_version = "3.5.6"
     implementation("io.insert-koin:koin-android:$koin_version")

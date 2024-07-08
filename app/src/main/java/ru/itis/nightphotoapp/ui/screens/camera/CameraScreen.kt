@@ -1,42 +1,23 @@
 package ru.itis.nightphotoapp.ui.screens.camera
 
-import android.Manifest
-import android.app.Activity
-import android.app.PendingIntent.getActivity
-import android.content.ContentValues.TAG
+import android.content.ContentValues
 import android.content.Context
-import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Matrix
-import android.graphics.Point
-import android.graphics.RectF
 import android.graphics.SurfaceTexture
 import android.hardware.camera2.CameraAccessException
-import android.hardware.camera2.CameraCaptureSession
-import android.hardware.camera2.CameraCharacteristics
-import android.hardware.camera2.CameraDevice
 import android.hardware.camera2.CameraManager
-import android.hardware.camera2.CameraMetadata.CONTROL_AE_MODE_OFF
 import android.hardware.camera2.CaptureRequest
-import android.os.Build
-import android.os.Handler
-import android.os.HandlerThread
+import android.media.ExifInterface
+import android.provider.MediaStore
 import android.util.AttributeSet
 import android.util.Log
-import android.util.Size
-import android.view.Surface
-import android.view.SurfaceView
 import android.view.TextureView
 import android.view.View
 import android.view.WindowManager
 import android.widget.LinearLayout
-import androidx.annotation.RequiresApi
-import androidx.camera.core.Camera
-import androidx.camera.core.impl.utils.CompareSizesByArea
-import androidx.camera.view.CameraController
-import androidx.camera.view.LifecycleCameraController
-import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -60,7 +41,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -69,30 +49,26 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat.getSystemService
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import org.koin.androidx.compose.koinViewModel
 import ru.itis.nightphotoapp.R
 import ru.itis.nightphotoapp.ui.navigation.RootGraph
-import java.util.Collections
+import ru.itis.nightphotoapp.utils.CameraParameters
+import ru.itis.nightphotoapp.utils.DisplayParameters
+import ru.itis.nightphotoapp.utils.SliderStatus
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlin.math.roundToInt
 
-class CompareSizesByArea : Comparator<Size> {
-    override fun compare(size1: Size, size2: Size): Int {
-        // Вычисляем площадь размера
-        val area1 = size1.width.toLong() * size1.height
-        val area2 = size2.width.toLong() * size2.height
-        // Используем Long.compare для сравнения значений площади
-        return java.lang.Long.compare(area1, area2)
-    }
-}
 
 class AutoFitTextureView @JvmOverloads constructor(
     context: Context,
@@ -134,21 +110,6 @@ class AutoFitTextureView @JvmOverloads constructor(
             }
         }
     }
-
-}
-
-val isoValues: List<Int> = listOf(100, 200, 400, 800, 1600, 3200)
-val shutterSpeedValues: List<Long> = listOf(100000, 200000, 500000, 1000000, 2000000, 4000000, 8000000, 15000000, 30000000, 60000000, 120000000, 250000000, 500000000, 1000000000, 2000000000, 4000000000, 8000000000, 16000000000, 32000000000)
-val isoMaxIndex = isoValues.size - 1
-val shutterSpeedMaxIndex = shutterSpeedValues.size - 1
-
-fun formatShutterSpeed(shutterSpeedInNano: Long): String {
-    val denominator = 1_000_000_000.0 / shutterSpeedInNano
-    return if (denominator < 1) {
-        "${shutterSpeedInNano / 1_000_000_000.0} сек"
-    } else {
-        "1/${denominator.toInt()}"
-    }
 }
 
 @Composable
@@ -162,40 +123,17 @@ fun CameraScreen(
     val eventHandler = viewModel::event
     val action by viewModel.action.collectAsStateWithLifecycle(null)
 
-    fun getScreenSize(windowManager: WindowManager): Point {
-        val display = windowManager.defaultDisplay
-        val size = Point()
-        display.getSize(size)
-        return size
-    }
 
     val cameraManager: CameraManager = applicationContext.getSystemService(Context.CAMERA_SERVICE) as CameraManager
-
     val windowManager = applicationContext.getSystemService(Context.WINDOW_SERVICE) as WindowManager
-
-    var previewSize by remember {
-        mutableStateOf(Size(1080, 1920))
-    }
-    var height by remember {
-        mutableIntStateOf(99)
-    }
+    val cameraId = cameraManager.cameraIdList[0]
+    val displaySize = DisplayParameters.getScreenSize(windowManager) //1080 2220
+    val characteristics = cameraManager.getCameraCharacteristics(cameraId)
+    val appContext = applicationContext
 
     var matrix by remember {
         mutableStateOf(Matrix())
     }
-    var aspectRatio by remember {
-        mutableStateOf(Size(9, 16))
-    }
-
-    val displaySize = getScreenSize(windowManager) //1080 2220
-
-//    DisposableEffect(Unit) {
-//        //        fun stopBackgroundThread() {
-////            backgroundHandlerThread.quitSafely()
-////            backgroundHandlerThread.join()
-////        }
-//    }
-
 
     LaunchedEffect(action) {
         when (action) {
@@ -206,106 +144,16 @@ fun CameraScreen(
         }
     }
 
-
-    val cameraId = cameraManager.cameraIdList[0]
+    // подумать как сделать:
+    DisposableEffect(Unit) {
+        onDispose {
+            //viewModel.releaseCameraResources()
+        }
+    }
 
     fun openCamera(){
         cameraManager.openCamera(cameraId, state.cameraStateCallback!!, state.handler)
     }
-
-    val characteristics = cameraManager.getCameraCharacteristics(cameraId)
-    val streamConfigurationMap = characteristics.get(
-        CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
-    val previewSizes = streamConfigurationMap?.getOutputSizes(SurfaceTexture::class.java)
-
-    println("aaaaaaaaaaaaaaaaa " + characteristics.get(CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL))
-
-
-    fun chooseOptimalSize(choices: Array<Size>, textureViewWidth: Int, textureViewHeight: Int, maxWidth: Int, maxHeight: Int, aspectRatio: Size): Size {
-        // Допуск в соотношении сторон
-        val aspectTolerance = 700
-        // Предпочтительные размеры
-        val bigEnough = ArrayList<Size>()
-        val notBigEnough = ArrayList<Size>()
-        val w = aspectRatio.width.toFloat()
-        val h = aspectRatio.height.toFloat()
-
-        for (option in choices) {
-            if (option.width <= maxWidth && option.height <= maxHeight) {
-                val ratio = option.width.toFloat() / option.height.toFloat()
-                if (Math.abs(ratio - w / h) < aspectTolerance) {
-                    if (option.width >= textureViewWidth && option.height >= textureViewHeight) {
-                        bigEnough.add(option)
-                    } else {
-                        notBigEnough.add(option)
-                    }
-                }
-            }
-        }
-
-        // Возвращаем подходящий размер
-        return when {
-            bigEnough.isNotEmpty() -> Collections.min(bigEnough, ru.itis.nightphotoapp.ui.screens.camera.CompareSizesByArea())
-            notBigEnough.isNotEmpty() -> Collections.max(notBigEnough, ru.itis.nightphotoapp.ui.screens.camera.CompareSizesByArea())
-            else -> {
-                Log.e(TAG, "Couldn't find any suitable preview size")
-                choices[13] // Возвращаем первый доступный размер как запасной вариант
-            }
-        }
-    }
-
-
-    fun configureTransform(viewWidth: Int, viewHeight: Int, windowManager: WindowManager, previewSize: Size?, textureView: TextureView): Matrix {
-        val rotation = windowManager.defaultDisplay.rotation
-        val matrix = Matrix()
-        val viewRect = RectF(0f, 0f, viewWidth.toFloat(), viewHeight.toFloat())
-        val bufferRect = previewSize?.height?.let {
-            RectF(
-                0f,
-                0f,
-                it.toFloat(),
-                previewSize.width.toFloat()
-            )
-        }
-        val centerX = viewRect.centerX()
-        val centerY = viewRect.centerY()
-        if (Surface.ROTATION_90 == rotation || Surface.ROTATION_270 == rotation) {
-            if (bufferRect != null) {
-                bufferRect.offset(centerX - bufferRect.centerX(), centerY - bufferRect.centerY())
-            }
-            matrix.setRectToRect(viewRect, bufferRect, Matrix.ScaleToFit.FILL)
-            val scale = Math.max(
-                viewHeight.toFloat() / (previewSize?.height ?: 1080),
-                viewWidth.toFloat() / (previewSize?.width ?: 1080)
-            )
-            matrix.postScale(scale, scale, centerX, centerY)
-            matrix.postRotate((90 * (rotation - 2)).toFloat(), centerX, centerY)
-        } else if (Surface.ROTATION_180 == rotation) {
-            matrix.postRotate(180f, centerX, centerY)
-        }
-
-//        val aspectRatio = (previewSize?.width?.toFloat() ?: 9f) / (previewSize?.height?.toFloat()
-//            ?: 16f)
-//        val newWidth: Int
-//        val newHeight: Int
-//        if (viewHeight > viewWidth * aspectRatio) {
-//            newWidth = viewWidth
-//            newHeight = (viewWidth / aspectRatio).toInt()
-//        } else {
-//            newWidth = (viewHeight * aspectRatio).toInt()
-//            newHeight = viewHeight
-//        }
-//
-//        val dx = (viewWidth - newWidth) / 2
-//        val dy = (viewHeight - newHeight) / 2
-//
-//        matrix.postScale(newWidth.toFloat() / viewWidth, newHeight.toFloat() / viewHeight, centerX, centerY)
-//        matrix.postTranslate(dx.toFloat(), dy.toFloat())
-        return matrix
-    }
-
-
-
 
     val textureView = AutoFitTextureView(applicationContext).apply {
         layoutParams = LinearLayout.LayoutParams(
@@ -337,45 +185,14 @@ fun CameraScreen(
 
     eventHandler.invoke(CameraEvent.OnTextureViewChanged(textureView))
 
-
-    //height = textureView.height
-// textureView.post {
-//        aspectRatio = Size(9, 16)
-//
-//        // Здесь вы можете определить maxWidth и maxHeight в зависимости от требований вашего приложения
-//        val maxWidth = displaySize.x
-//        val maxHeight = displaySize.y
-//        previewSize = previewSizes?.let { chooseOptimalSize(it, state.textureView!!.width, state.textureView!!.height, maxWidth, maxHeight, aspectRatio) }!!
-//        matrix = state.textureView?.let {
-//            configureTransform(
-//                state.textureView!!.width, state.textureView!!.height, windowManager, previewSize,
-//                it
-//            )
-//        }!!
-
-        //matrix?.setScale(1.5f, 0.7f)
-        //state.textureView?.setTransform(matrix)
-//    }
-
     matrix.setScale(1.2f, 1.0f)
     state.textureView?.setTransform(matrix)
-
-    //eventHandler.invoke(CameraEvent.OnTextureViewChanged(textureView))
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
     ) {
-//        Column {
-//            if (previewSizes != null) {
-//                for( i in previewSizes){
-//                    Text(text = i.toString())
-//                }
-//            }
-//        }
-
-
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -385,7 +202,6 @@ fun CameraScreen(
             SettingsBar(
                 modifier = Modifier,
                 state = state,
-                isoValues = isoValues,
                 onSettingsClick = {
                     eventHandler.invoke(
                         CameraEvent.OnSettingsClick
@@ -422,9 +238,9 @@ fun CameraScreen(
                                 .align(Alignment.TopCenter)
                                 .padding(top = 8.dp),
                             isoIndex = state.isoIndex,
-                            isoMaxIndex = isoMaxIndex,
+                            isoMaxIndex = CameraParameters.isoMaxIndex,
                             onValueChanged = { it ->
-                                state.capReq?.set(CaptureRequest.SENSOR_SENSITIVITY, isoValues[it])
+                                state.capReq?.set(CaptureRequest.SENSOR_SENSITIVITY, CameraParameters.isoValues[it])
                                 eventHandler.invoke(
                                     CameraEvent.OnIsoIndexChanged(it)
                                 )
@@ -446,9 +262,9 @@ fun CameraScreen(
                                 .align(Alignment.TopCenter)
                                 .padding(top = 8.dp),
                             shutterSpeedIndex = state.shutterSpeedIndex,
-                            shutterSpeedMaxIndex = shutterSpeedMaxIndex,
+                            shutterSpeedMaxIndex = CameraParameters.shutterSpeedMaxIndex,
                             onValueChanged = { index ->
-                                state.capReq?.set(CaptureRequest.SENSOR_EXPOSURE_TIME, shutterSpeedValues[index])
+                                state.capReq?.set(CaptureRequest.SENSOR_EXPOSURE_TIME, CameraParameters.shutterSpeedValues[index])
                                 eventHandler.invoke(
                                     CameraEvent.OnShutterSpeedIndexChanged(index)
                                 )
@@ -464,7 +280,7 @@ fun CameraScreen(
                             }
                         )
                     }
-                    SliderStatus.HIDE -> Text(text = "Hide")
+                    SliderStatus.HIDE -> Text(text = "")
                 }
 
             }
@@ -475,16 +291,82 @@ fun CameraScreen(
             modifier = Modifier
                 .align(Alignment.BottomCenter),
             photoWithFlash = state.photoWithFlash,
-            photosNumber = state.photosNumber
+            photosNumber = state.photosNumber,
+            onTakePhoto = {
+                state.imageReader?.setOnImageAvailableListener({ p0 ->
+                    val image = p0?.acquireLatestImage()
+                    val buffer = image!!.planes[0].buffer
+                    val bytes = ByteArray(buffer.remaining())
+                    buffer.get(bytes)
+
+                    saveImageToGallery(appContext, bytes)
+
+                    image.close()
+                }, state.handler)
+                eventHandler.invoke(
+                    CameraEvent.OnTakePhoto
+                )
+            }
         )
     }
+}
+
+fun saveImageToGallery(context: Context, bytes: ByteArray) {
+    // Создаем Bitmap из массива байтов
+    val originalBitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+
+    // Получаем ориентацию из ExifInterface
+    val exifInterface = ExifInterface(ByteArrayInputStream(bytes))
+    val orientation = exifInterface.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+    println(ExifInterface.ORIENTATION_ROTATE_90)
+
+    // Поворачиваем изображение, если это необходимо
+    val matrix = Matrix()
+    // если что:
+//    when (orientation) {
+//        ExifInterface.ORIENTATION_NORMAL -> matrix.postRotate(90f)
+//        ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
+//        ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
+//        ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
+//    }
+    val rotatedBitmap = Bitmap.createBitmap(originalBitmap, 0, 0, originalBitmap.width, originalBitmap.height, matrix, true)
+
+    // Сохраняем изображение
+    val timeStamp: String = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+    val imageFileName = "JPEG_$timeStamp.jpg"
+    val values = ContentValues().apply {
+        put(MediaStore.Images.Media.DISPLAY_NAME, imageFileName)
+        put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+        // Добавьте больше метаданных при необходимости
+    }
+
+    val uri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+    uri?.let {
+        context.contentResolver.openOutputStream(it).use { outputStream ->
+            if (outputStream != null) {
+                rotatedBitmap.compress(Bitmap.CompressFormat.JPEG, 100, outputStream)
+            }
+            outputStream?.flush()
+            outputStream?.close()
+        }
+    }
+
+    // Освобождаем ресурсы
+    originalBitmap.recycle()
+    rotatedBitmap.recycle()
+}
+
+// Вспомогательная функция для конвертации Bitmap в массив байтов
+fun Bitmap.toByteArray(): ByteArray {
+    val stream = ByteArrayOutputStream()
+    this.compress(Bitmap.CompressFormat.JPEG, 100, stream)
+    return stream.toByteArray()
 }
 
 @Composable
 fun SettingsBar(
     modifier: Modifier,
     state: CameraState,
-    isoValues: List<Int>,
     onSettingsClick: () -> Unit,
     onAutoExpClick: () -> Unit,
     onIsoClick: () -> Unit,
@@ -512,7 +394,6 @@ fun SettingsBar(
 
         Row(
             modifier = modifier
-                //.padding(horizontal = 20.dp)
                 .fillMaxWidth()
                 .height(70.dp),
             horizontalArrangement = Arrangement.SpaceAround
@@ -557,7 +438,7 @@ fun SettingsBar(
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text(
-                            text = "ISO",
+                            text = stringResource(id = R.string.iso),
                             color = MaterialTheme.colorScheme.onPrimary
                         )
                         Text(
@@ -586,14 +467,13 @@ fun SettingsBar(
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text(
-                            text = "Выдержка",
+                            text = stringResource(id = R.string.shutter_speed),
                             color = MaterialTheme.colorScheme.onPrimary,
                             fontSize = 13.sp
                         )
                         Text(
-                            text = formatShutterSpeed(state.shutterSpeedValue),
+                            text = CameraParameters.formatShutterSpeed(state.shutterSpeedValue),
                             color = MaterialTheme.colorScheme.onPrimary,
-                            //fontSize = 7.sp
                         )
                     }
                 }
@@ -625,8 +505,6 @@ fun SettingsBar(
             modifier = modifier
                 .fillMaxWidth()
                 .height(80.dp)
-                //.background(MaterialTheme.colorScheme.primary),
-            //horizontalArrangement = Arrangement.SpaceEvenly
         ) {
 
             if (state.isAutoMode){
@@ -718,7 +596,8 @@ fun ShutterSpeedSlider(
 fun BottomBar(
     modifier: Modifier,
     photoWithFlash: Boolean,
-    photosNumber: Int
+    photosNumber: Int,
+    onTakePhoto: () -> Unit
 ){
 
     Box(
@@ -741,7 +620,7 @@ fun BottomBar(
             ){
                 Text(
                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
-                    text = "Ночное фото",
+                    text = stringResource(id = R.string.night_photo),
                     color = MaterialTheme.colorScheme.onPrimary
                 )
             }
@@ -766,7 +645,7 @@ fun BottomBar(
                 Icon(
                     painterResource(R.drawable.ic_take_photo),
                     modifier = Modifier
-                        .clickable { }
+                        .clickable { onTakePhoto() }
                         .size(80.dp),
                     contentDescription = "icon",
                     tint = MaterialTheme.colorScheme.onPrimary

@@ -1,7 +1,5 @@
 package ru.itis.nightphotoapp.ui.screens.settings
 
-import android.preference.PreferenceDataStore
-import androidx.datastore.core.DataStore
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableSharedFlow

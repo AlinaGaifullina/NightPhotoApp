@@ -10,7 +10,7 @@ import ru.itis.nightphotoapp.ui.screens.camera.CameraViewModel
 import ru.itis.nightphotoapp.ui.screens.settings.SettingsViewModel
 
 
-val uiModule = module {
+val appModule = module {
 
     single<Application> { androidContext().applicationContext as Application }
 

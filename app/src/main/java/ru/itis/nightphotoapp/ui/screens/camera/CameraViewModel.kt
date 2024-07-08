@@ -1,22 +1,20 @@
 package ru.itis.nightphotoapp.ui.screens.camera
 
 import android.content.ContentValues.TAG
-import android.content.Context
+import android.graphics.ImageFormat
 import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CameraDevice
 import android.hardware.camera2.CameraDevice.StateCallback
-import android.hardware.camera2.CameraManager
 import android.hardware.camera2.CameraMetadata.CONTROL_AE_MODE_OFF
 import android.hardware.camera2.CameraMetadata.CONTROL_AE_MODE_ON
 import android.hardware.camera2.CaptureRequest
+import android.media.ImageReader
 import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.util.Log
 import android.view.Surface
-import android.view.TextureView
 import androidx.annotation.RequiresApi
-import androidx.camera.view.LifecycleCameraController
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -26,12 +24,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
 import ru.itis.nightphotoapp.domain.repository.CameraRepository
+import ru.itis.nightphotoapp.utils.CameraParameters
+import ru.itis.nightphotoapp.utils.SliderStatus
 
-enum class SliderStatus {
-    HIDE,
-    ISO,
-    SHUTTER_SPEED
-}
 
 data class CameraState(
     val photosNumber: Int = 1,
@@ -50,7 +45,8 @@ data class CameraState(
     val surface: Surface? = null,
     val handler: Handler? = null,
     val handlerThread: HandlerThread = HandlerThread("CameraVideoThread" ),
-    val cameraDevice: CameraDevice? = null
+    val cameraDevice: CameraDevice? = null,
+    val imageReader: ImageReader? = null
 )
 
 sealed interface CameraSideEffect {
@@ -58,6 +54,7 @@ sealed interface CameraSideEffect {
 }
 
 sealed interface CameraEvent {
+    object OnTakePhoto : CameraEvent
     object OnChangeModeClick : CameraEvent
     object OnIsoButtonClick : CameraEvent
     object OnShutterSpeedButtonClick : CameraEvent
@@ -89,7 +86,8 @@ class CameraViewModel(
             _state.value.handlerThread.start()
             _state.tryEmit(
                 _state.value.copy(
-                    handler = Handler(_state.value.handlerThread.looper)
+                    handler = Handler(_state.value.handlerThread.looper),
+                    imageReader = ImageReader.newInstance(1080, 1920, ImageFormat.JPEG,  1)
                 )
             )
         }
@@ -114,7 +112,7 @@ class CameraViewModel(
 
                             _state.value.surface?.let { _state.value.capReq?.addTarget(it) }
 
-                            _state.value.cameraDevice?.createCaptureSession(listOf(_state.value.surface), object:
+                            _state.value.cameraDevice?.createCaptureSession(listOf(_state.value.surface, _state.value.imageReader?.surface), object:
                                 CameraCaptureSession.StateCallback() {
                                 override fun onConfigured(p0: CameraCaptureSession) {
                                     _state.tryEmit(
@@ -128,10 +126,9 @@ class CameraViewModel(
                                 override fun onConfigureFailed(p0: CameraCaptureSession) {
                                     TODO("Not yet implemented")
                                 }
-
                             }, _state.value.handler)
-
                         }
+
                         override fun onDisconnected(cameraDevice: CameraDevice) {
                             _state.value.cameraDevice?.close()
                         }
@@ -162,6 +159,7 @@ class CameraViewModel(
 
     fun event(cameraEvent: CameraEvent) {
         when (cameraEvent) {
+            CameraEvent.OnTakePhoto -> onTakePhoto()
             CameraEvent.OnChangeModeClick -> onChangeModeClick()
             CameraEvent.OnIsoButtonClick -> onIsoButtonClick()
             CameraEvent.OnShutterSpeedButtonClick -> onShutterSpeedButtonClick()
@@ -243,12 +241,15 @@ class CameraViewModel(
                 sliderStatus = SliderStatus.HIDE
             )
         )
-        if(_state.value.isAutoMode){
-            _state.value.capReq?.set(CaptureRequest.CONTROL_AE_MODE, CONTROL_AE_MODE_ON)
-            _state.value.capReq?.set(CaptureRequest.SENSOR_SENSITIVITY, 800)
-            _state.value.cameraCaptureSession?.setRepeatingRequest(_state.value.capReq!!.build(), null, _state.value.handler)
-        } else {
-            _state.value.capReq?.set(CaptureRequest.CONTROL_AE_MODE, CONTROL_AE_MODE_OFF)
+        with(_state.value){
+            if(_state.value.isAutoMode){
+                capReq?.set(CaptureRequest.CONTROL_AE_MODE, CONTROL_AE_MODE_ON)
+                capReq?.set(CaptureRequest.SENSOR_SENSITIVITY, 800)
+
+                cameraCaptureSession?.setRepeatingRequest(capReq!!.build(), null, handler)
+            } else {
+                capReq?.set(CaptureRequest.CONTROL_AE_MODE, CONTROL_AE_MODE_OFF)
+            }
         }
     }
 
@@ -272,7 +273,7 @@ class CameraViewModel(
         _state.tryEmit(
             _state.value.copy(
                 shutterSpeedIndex = shutterSpeedIndex,
-                shutterSpeedValue = shutterSpeedValues[shutterSpeedIndex]
+                shutterSpeedValue = CameraParameters.shutterSpeedValues[shutterSpeedIndex]
             )
         )
     }
@@ -281,18 +282,44 @@ class CameraViewModel(
         _state.tryEmit(
             _state.value.copy(
                 isoIndex = isoIndex,
-                isoValue = isoValues[isoIndex]
+                isoValue = CameraParameters.isoValues[isoIndex]
             )
         )
     }
 
 
-    fun onTakePhoto(
-        controller: LifecycleCameraController
-    ) {
-        viewModelScope.launch {
-            cameraRepository.takePhoto(controller)
+    private fun onTakePhoto() {
+        val singlePhotoReq = _state.value.cameraDevice?.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE)
+        with(_state.value){
+            singlePhotoReq?.addTarget(imageReader!!.surface)
+            singlePhotoReq?.set(
+                CaptureRequest.CONTROL_AE_MODE,
+                if(isAutoMode) CONTROL_AE_MODE_ON else CONTROL_AE_MODE_OFF
+            )
+            singlePhotoReq?.set(CaptureRequest.SENSOR_SENSITIVITY, isoValue)
+            singlePhotoReq?.set(CaptureRequest.SENSOR_EXPOSURE_TIME, shutterSpeedValue)
+
+            cameraCaptureSession?.capture(singlePhotoReq!!.build(), null, null)
         }
     }
 
+// подумать как сделать:
+//    fun releaseCameraResources() {
+//        with(_state.value){
+//            cameraCaptureSession?.close()
+//            cameraDevice?.close()
+//            imageReader?.close()
+//            handlerThread.quitSafely()
+//            try {
+//                handlerThread.join()
+//            } catch (e: InterruptedException) {
+//                Log.e("CameraRelease", "Error on closing handlerThread", e)
+//            }
+//        }
+//    }
+//
+//    override fun onCleared() {
+//        super.onCleared()
+//        releaseCameraResources()
+//    }
 }

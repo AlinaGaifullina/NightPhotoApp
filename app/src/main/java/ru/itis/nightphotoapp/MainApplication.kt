@@ -4,7 +4,7 @@ import android.app.Application
 import org.koin.android.ext.koin.androidContext
 import org.koin.android.ext.koin.androidLogger
 import org.koin.core.context.GlobalContext.startKoin
-import ru.itis.nightphotoapp.di.uiModule
+import ru.itis.nightphotoapp.di.appModule
 
 class MainApplication : Application() {
 
@@ -17,7 +17,7 @@ class MainApplication : Application() {
             // Reference Android context
             androidContext(this@MainApplication)
             // Load modules
-            modules(uiModule)
+            modules(appModule)
         }
     }
 }

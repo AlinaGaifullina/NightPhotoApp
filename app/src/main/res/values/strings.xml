@@ -1,3 +1,10 @@
 <resources>
     <string name="app_name">NightPhotoApp</string>
+    <string name="iso">ISO</string>
+    <string name="shutter_speed">Выдержка</string>
+    <string name="settings">Настройки</string>
+    <string name="saving_folder">Папка для сохранения</string>
+    <string name="save_photo_series">Сохранять серию снимков</string>
+    <string name="save_photo_series_description">Будет сохранена вся серия снимков</string>
+    <string name="night_photo">Ночное фото</string>
 </resources>

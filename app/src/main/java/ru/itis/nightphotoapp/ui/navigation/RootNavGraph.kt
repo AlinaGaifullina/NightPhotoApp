@@ -1,6 +1,5 @@
 package ru.itis.nightphotoapp.ui.navigation
 
-import android.app.Activity
 import android.content.Context
 import androidx.compose.runtime.Composable
 import androidx.navigation.NavHostController

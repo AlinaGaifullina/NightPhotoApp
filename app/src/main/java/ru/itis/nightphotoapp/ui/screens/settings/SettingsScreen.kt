@@ -26,14 +26,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import org.koin.androidx.compose.koinViewModel
 import ru.itis.nightphotoapp.R
 import ru.itis.nightphotoapp.ui.navigation.RootGraph
-import ru.itis.nightphotoapp.ui.screens.camera.CameraSideEffect
 
 @Composable
 fun SettingsScreen(
@@ -111,17 +110,15 @@ fun TopBar(
                     contentDescription = "icon",
                     tint = MaterialTheme.colorScheme.onPrimary
                 )
-
             }
 
             Text(
-                text = "Настройки",
+                text = stringResource(id = R.string.settings),
                 fontSize = 20.sp,
                 color = MaterialTheme.colorScheme.onPrimary
             )
         }
     }
-
 }
 
 @Composable
@@ -149,7 +146,7 @@ fun SettingsContent(
                 horizontalAlignment = Alignment.Start
             ) {
                 Text(
-                    text = "Папка для сохранения",
+                    text = stringResource(id = R.string.saving_folder),
                     color = MaterialTheme.colorScheme.onPrimary
                 )
                 Text(
@@ -158,7 +155,6 @@ fun SettingsContent(
                     color = MaterialTheme.colorScheme.onPrimary
                 )
             }
-
         }
 
         Box(
@@ -183,7 +179,7 @@ fun SettingsContent(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        text = "Сохранять серию снимков",
+                        text = stringResource(id = R.string.save_photo_series),
                         color = MaterialTheme.colorScheme.onPrimary
                     )
                     Box(
@@ -202,7 +198,7 @@ fun SettingsContent(
                 }
                 Text(
                     modifier = Modifier.padding(top = 8.dp),
-                    text = "Будет сохранена вся серия снимков",
+                    text = stringResource(id = R.string.save_photo_series_description),
                     color = MaterialTheme.colorScheme.onPrimary
                 )
             }
