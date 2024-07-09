@@ -5,14 +5,18 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
+import android.graphics.Rect
 import android.graphics.SurfaceTexture
 import android.hardware.camera2.CameraAccessException
+import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.hardware.camera2.CaptureRequest
 import android.media.ExifInterface
 import android.provider.MediaStore
 import android.util.AttributeSet
 import android.util.Log
+import android.util.Size
+import android.view.MotionEvent
 import android.view.TextureView
 import android.view.View
 import android.view.WindowManager
@@ -32,10 +36,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -58,6 +62,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import org.koin.androidx.compose.koinViewModel
 import ru.itis.nightphotoapp.R
+import ru.itis.nightphotoapp.ui.components.IsoSlider
+import ru.itis.nightphotoapp.ui.components.SeriesSizesBox
+import ru.itis.nightphotoapp.ui.components.ShutterSpeedSlider
 import ru.itis.nightphotoapp.ui.navigation.RootGraph
 import ru.itis.nightphotoapp.utils.CameraParameters
 import ru.itis.nightphotoapp.utils.DisplayParameters
@@ -67,7 +74,6 @@ import java.io.ByteArrayOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import kotlin.math.roundToInt
 
 
 class AutoFitTextureView @JvmOverloads constructor(
@@ -130,6 +136,7 @@ fun CameraScreen(
     val displaySize = DisplayParameters.getScreenSize(windowManager) //1080 2220
     val characteristics = cameraManager.getCameraCharacteristics(cameraId)
     val appContext = applicationContext
+    val evRange = CameraParameters.getEvCompensationRange(appContext, cameraId)
 
     var matrix by remember {
         mutableStateOf(Matrix())
@@ -161,7 +168,7 @@ fun CameraScreen(
             LinearLayout.LayoutParams.MATCH_PARENT
         )
 
-        setAspectRatio(3, 4)
+        //setAspectRatio(3, 4)
         surfaceTextureListener = object : TextureView.SurfaceTextureListener {
             override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
 
@@ -174,13 +181,42 @@ fun CameraScreen(
 
             override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
                 // Освободите ресурсы камеры здесь
-                return false
+                return true
             }
 
             override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {
                 // Обновите ваше изображение здесь
             }
         }
+    }
+    // Функция для получения размера превью
+    fun getPreviewSize(characteristics: CameraCharacteristics): Size {
+        val map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+        // Вы можете изменить это, чтобы получить разные размеры в зависимости от вашего использования
+        return map?.getOutputSizes(SurfaceTexture::class.java)?.firstOrNull() ?: Size(0, 0)
+    }
+
+    // Функция для получения размера активной области датчика
+    fun getSensorArraySize(characteristics: CameraCharacteristics): Rect {
+        return characteristics.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE) ?: Rect(0, 0, 0, 0)
+    }
+
+
+    val previewSize = getPreviewSize(characteristics)
+    val sensorArraySize = getSensorArraySize(characteristics)
+
+    // не работает, надо чинить
+    textureView.setOnTouchListener { v, event ->
+        if (event.action == MotionEvent.ACTION_DOWN) {
+            val x = event.x
+            val y = event.y
+            // Передайте координаты касания для настройки фокуса
+            eventHandler(
+                CameraEvent.OnSetFocus(x, y, previewSize, sensorArraySize)
+            )
+            v.performClick()
+        }
+        true
     }
 
     eventHandler.invoke(CameraEvent.OnTextureViewChanged(textureView))
@@ -202,6 +238,7 @@ fun CameraScreen(
             SettingsBar(
                 modifier = Modifier,
                 state = state,
+                isCapturing = state.isCapturing,
                 onSettingsClick = {
                     eventHandler.invoke(
                         CameraEvent.OnSettingsClick
@@ -287,29 +324,83 @@ fun CameraScreen(
 
             eventHandler.invoke(CameraEvent.OnTextureViewChanged(textureView))
         }
-        BottomBar(
+
+        Column(
             modifier = Modifier
-                .align(Alignment.BottomCenter),
-            photoWithFlash = state.photoWithFlash,
-            photosNumber = state.photosNumber,
-            onTakePhoto = {
-                state.imageReader?.setOnImageAvailableListener({ p0 ->
-                    val image = p0?.acquireLatestImage()
-                    val buffer = image!!.planes[0].buffer
-                    val bytes = ByteArray(buffer.remaining())
-                    buffer.get(bytes)
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            val compensationStep = characteristics.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_STEP)
+            val compensationRange = characteristics.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_RANGE)
+            Text(text = compensationRange.toString(), color = MaterialTheme.colorScheme.onPrimary)
+            Text(text = compensationStep.toString(), color = MaterialTheme.colorScheme.onPrimary)
 
-                    saveImageToGallery(appContext, bytes)
+            if(state.isShowSeriesSizes) {
+                SeriesSizesBox(
+                    modifier = Modifier,
+                    seriesSize = state.seriesSize,
+                    isCheckboxClick = state.photoWithFlash,
+                    onCheckboxClick = { isChecked ->
+                        eventHandler(
+                            CameraEvent.OnCheckboxClick(isChecked)
+                        )
+                    },
+                    onChangeSeries = { size ->
+                        eventHandler.invoke(
+                            CameraEvent.OnSeriesSizeChanged(size)
+                        )
+                    }
 
-                    image.close()
-                }, state.handler)
-                eventHandler.invoke(
-                    CameraEvent.OnTakePhoto
                 )
             }
-        )
+            BottomBar(
+                modifier = Modifier,
+                photoWithFlash = state.photoWithFlash,
+                photosNumber = state.seriesSize,
+                isCapturing = state.isCapturing,
+                onTakePhoto = {
+                    state.imageReader?.setOnImageAvailableListener({ p0 ->
+                        val image = p0?.acquireLatestImage()
+                        val buffer = image!!.planes[0].buffer
+                        val bytes = ByteArray(buffer.remaining())
+                        buffer.get(bytes)
+
+                        saveImageToGallery(appContext, bytes)
+
+                        image.close()
+                    }, state.handler)
+
+                    eventHandler.invoke(
+                        CameraEvent.OnTakePhoto(evRange)
+                    )
+                },
+                onSeriesButtonClick = {
+                    eventHandler.invoke(
+                        CameraEvent.OnSeriesButtonClick
+                    )
+                }
+            )
+        }
     }
 }
+
+fun generateEvSeries(numberOfShots: Int, minEv: Double, maxEv: Double): List<Double> {
+    if (numberOfShots !in 1..9) {
+        throw IllegalArgumentException("Количество снимков должно быть от 1 до 9")
+    }
+
+    val referenceEv = minOf(Math.abs(minEv), Math.abs(maxEv))
+    val evStep = (referenceEv * 2) / (numberOfShots - 1)
+    val middleIndex = (numberOfShots - 1) / 2
+
+    return List(numberOfShots) { index ->
+        -referenceEv + (index * evStep)
+    }
+}
+
+// Пример использования функции:
+val evList = generateEvSeries(9, -24.0, 12.0)
 
 fun saveImageToGallery(context: Context, bytes: ByteArray) {
     // Создаем Bitmap из массива байтов
@@ -323,12 +414,12 @@ fun saveImageToGallery(context: Context, bytes: ByteArray) {
     // Поворачиваем изображение, если это необходимо
     val matrix = Matrix()
     // если что:
-//    when (orientation) {
-//        ExifInterface.ORIENTATION_NORMAL -> matrix.postRotate(90f)
+    when (orientation) {
+        ExifInterface.ORIENTATION_NORMAL -> matrix.postRotate(90f)
 //        ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
 //        ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
 //        ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
-//    }
+    }
     val rotatedBitmap = Bitmap.createBitmap(originalBitmap, 0, 0, originalBitmap.width, originalBitmap.height, matrix, true)
 
     // Сохраняем изображение
@@ -367,6 +458,7 @@ fun Bitmap.toByteArray(): ByteArray {
 fun SettingsBar(
     modifier: Modifier,
     state: CameraState,
+    isCapturing: Boolean,
     onSettingsClick: () -> Unit,
     onAutoExpClick: () -> Unit,
     onIsoClick: () -> Unit,
@@ -407,7 +499,7 @@ fun SettingsBar(
             ) {
                 IconButton(
                     modifier = Modifier.align(Alignment.Center),
-                    onClick = { onAutoExpClick() }
+                    onClick = { if (!isCapturing) { onAutoExpClick() } }
                 ) {
                     Icon(
                         painterResource(
@@ -428,7 +520,6 @@ fun SettingsBar(
             ) {
                 Box(
                     modifier = Modifier
-                        .clickable { }
                         .align(Alignment.Center),
                 ) {
                     Column(
@@ -457,7 +548,6 @@ fun SettingsBar(
             ) {
                 Box(
                     modifier = Modifier
-                        .clickable { }
                         .align(Alignment.Center),
                 ) {
                     Column(
@@ -487,9 +577,7 @@ fun SettingsBar(
             ) {
                 IconButton(
                     modifier = Modifier.align(Alignment.Center),
-                    onClick = {
-                        onSettingsClick()
-                    }
+                    onClick = { if (!isCapturing) { onSettingsClick() } }
                 ) {
                     Icon(
                         painterResource(R.drawable.ic_settings),
@@ -535,14 +623,14 @@ fun SettingsBar(
                 )
                 Box(
                     modifier = Modifier
-                        .clickable { onIsoClick() }
+                        .clickable { if (!isCapturing) { onIsoClick() } }
                         .fillMaxHeight()
                         .weight(1f)
 
                 )
                 Box(
                     modifier = Modifier
-                        .clickable { onShutterSpeedClick() }
+                        .clickable { if (!isCapturing) { onShutterSpeedClick() } }
                         .fillMaxHeight()
                         .weight(1f)
                 )
@@ -557,47 +645,13 @@ fun SettingsBar(
 }
 
 @Composable
-fun IsoSlider(
-    modifier: Modifier,
-    isoIndex: Int,
-    isoMaxIndex: Int,
-    onValueChanged: (newValue: Int) -> Unit
-){
-    Slider(
-        modifier = modifier.padding(horizontal = 16.dp),
-        value = isoIndex.toFloat(),
-        onValueChange = { newValue ->
-            onValueChanged(newValue.roundToInt())
-        },
-        valueRange = 0f..isoMaxIndex.toFloat(),
-        steps = isoMaxIndex - 1
-    )
-}
-
-@Composable
-fun ShutterSpeedSlider(
-    modifier: Modifier,
-    shutterSpeedIndex: Int,
-    shutterSpeedMaxIndex: Int,
-    onValueChanged: (newValue: Int) -> Unit
-){
-    Slider(
-        modifier = modifier.padding(horizontal = 16.dp),
-        value = shutterSpeedIndex.toFloat(),
-        onValueChange = { newValue ->
-            onValueChanged(newValue.roundToInt())
-        },
-        valueRange = 0f..shutterSpeedMaxIndex.toFloat(),
-        steps = shutterSpeedMaxIndex - 1
-    )
-}
-
-@Composable
 fun BottomBar(
     modifier: Modifier,
     photoWithFlash: Boolean,
     photosNumber: Int,
-    onTakePhoto: () -> Unit
+    isCapturing: Boolean,
+    onTakePhoto: () -> Unit,
+    onSeriesButtonClick: () -> Unit
 ){
 
     Box(
@@ -606,71 +660,88 @@ fun BottomBar(
             .height(210.dp)
             .background(MaterialTheme.colorScheme.primary)
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .align(Alignment.TopCenter),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Box(
+        if(isCapturing){
+            Column(
                 modifier = Modifier
-                    .padding(top = 8.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(Color.Black)
-            ){
+                    .padding(top = 16.dp)
+                    .fillMaxWidth()
+                    .align(Alignment.Center),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
                 Text(
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
-                    text = stringResource(id = R.string.night_photo),
+                    text = stringResource(id = R.string.wait_photos),
+                    color = MaterialTheme.colorScheme.onPrimary
+                )
+                CircularProgressIndicator(
+                    modifier = Modifier,
                     color = MaterialTheme.colorScheme.onPrimary
                 )
             }
-
-            Row(
+        } else {
+            Column(
                 modifier = Modifier
-                    .padding(horizontal = 26.dp, vertical = 16.dp)
-                    .fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                    .fillMaxWidth()
+                    .align(Alignment.TopCenter),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Box(
                     modifier = Modifier
-                        .height(60.dp)
-                        .width(60.dp)
+                        .padding(top = 8.dp)
                         .clip(RoundedCornerShape(16.dp))
-                        .background(MaterialTheme.colorScheme.onPrimary)
-                ) {
-
+                        .background(Color.Black)
+                ){
+                    Text(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
+                        text = stringResource(id = R.string.night_photo),
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
                 }
 
-                Icon(
-                    painterResource(R.drawable.ic_take_photo),
+                Row(
                     modifier = Modifier
-                        .clickable { onTakePhoto() }
-                        .size(80.dp),
-                    contentDescription = "icon",
-                    tint = MaterialTheme.colorScheme.onPrimary
-                )
-
-                Box(
-                    modifier = Modifier
-                        .clickable { }
-                ){
-                    Icon(
-                        painterResource(
-                            if(photoWithFlash) R.drawable.ic_rec_flash else R.drawable.ic_rec
-                        ),
+                        .padding(horizontal = 26.dp, vertical = 16.dp)
+                        .fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
                         modifier = Modifier
-                            .align(Alignment.Center)
-                            .size(60.dp),
+                            .height(60.dp)
+                            .width(60.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(MaterialTheme.colorScheme.onPrimary)
+                    )
+
+                    Icon(
+                        painterResource(R.drawable.ic_take_photo),
+                        modifier = Modifier
+                            .clickable { onTakePhoto() }
+                            .size(80.dp),
                         contentDescription = "icon",
                         tint = MaterialTheme.colorScheme.onPrimary
                     )
 
-                    Text(
-                        modifier = Modifier.align(Alignment.Center),
-                        text = photosNumber.toString(),
-                        color = MaterialTheme.colorScheme.onPrimary
-                    )
+                    Box(
+                        modifier = Modifier
+                            .clickable { onSeriesButtonClick() }
+                    ){
+                        Icon(
+                            painterResource(
+                                if(photoWithFlash) R.drawable.ic_rec_flash else R.drawable.ic_rec
+                            ),
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .size(60.dp),
+                            contentDescription = "icon",
+                            tint = MaterialTheme.colorScheme.onPrimary
+                        )
+
+                        Text(
+                            modifier = Modifier.align(Alignment.Center),
+                            text = photosNumber.toString(),
+                            color = MaterialTheme.colorScheme.onPrimary
+                        )
+                    }
                 }
             }
         }

@@ -1,9 +1,12 @@
 package ru.itis.nightphotoapp.utils
 
 import android.content.Context
+import android.graphics.PointF
+import android.graphics.Rect
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.util.Range
+import android.util.Size
 
 class CameraParameters {
 
@@ -16,10 +19,27 @@ class CameraParameters {
         fun formatShutterSpeed(shutterSpeedInNano: Long): String {
             val denominator = 1_000_000_000.0 / shutterSpeedInNano
             return if (denominator < 1) {
-                "${shutterSpeedInNano / 1_000_000_000.0} сек"
+                "${shutterSpeedInNano / 1_000_000_000.0}"
             } else {
                 "1/${denominator.toInt()}"
             }
+        }
+
+        fun convertToFocusPoint(x: Float, y: Float, previewSize: Size, sensorArraySize: Rect): PointF {
+            val focusX = (x / previewSize.width.toFloat()) * sensorArraySize.width()
+            val focusY = (y / previewSize.height.toFloat()) * sensorArraySize.height()
+
+            // Перевод координат в систему координат, используемую API камеры
+            val resultX = sensorArraySize.left + focusX.toInt()
+            val resultY = sensorArraySize.top + focusY.toInt()
+
+            return PointF(resultX.toFloat(), resultY.toFloat())
+        }
+
+        fun getEvCompensationRange(context: Context, cameraId: String): Range<Int>? {
+            val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+            val characteristics = cameraManager.getCameraCharacteristics(cameraId)
+            return characteristics.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_RANGE)
         }
 
         fun getCameraCharacteristics(context: Context): String {

@@ -2,21 +2,27 @@ package ru.itis.nightphotoapp.ui.screens.camera
 
 import android.content.ContentValues.TAG
 import android.graphics.ImageFormat
+import android.graphics.Rect
 import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CameraDevice
 import android.hardware.camera2.CameraDevice.StateCallback
+import android.hardware.camera2.CameraMetadata
 import android.hardware.camera2.CameraMetadata.CONTROL_AE_MODE_OFF
 import android.hardware.camera2.CameraMetadata.CONTROL_AE_MODE_ON
 import android.hardware.camera2.CaptureRequest
+import android.hardware.camera2.params.MeteringRectangle
 import android.media.ImageReader
 import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.util.Log
+import android.util.Range
+import android.util.Size
 import android.view.Surface
 import androidx.annotation.RequiresApi
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -29,8 +35,10 @@ import ru.itis.nightphotoapp.utils.SliderStatus
 
 
 data class CameraState(
-    val photosNumber: Int = 1,
+    val seriesSize: Int = 3,
+    val isCapturing: Boolean = false,
     val photoWithFlash: Boolean = false,
+    val isShowSeriesSizes: Boolean = false,
     val isoIndex: Int = 0,
     val shutterSpeedIndex: Int = 0,
     val shutterSpeedValue: Long = 100000,
@@ -54,11 +62,15 @@ sealed interface CameraSideEffect {
 }
 
 sealed interface CameraEvent {
-    object OnTakePhoto : CameraEvent
+    data class OnTakePhoto(val evRange: Range<Int>?) : CameraEvent
     object OnChangeModeClick : CameraEvent
     object OnIsoButtonClick : CameraEvent
     object OnShutterSpeedButtonClick : CameraEvent
     object OnSettingsClick : CameraEvent
+    object OnSeriesButtonClick : CameraEvent
+    data class OnSeriesSizeChanged(val seriesSize: Int) : CameraEvent
+    data class OnCheckboxClick(val isChecked: Boolean) : CameraEvent
+    data class OnSetFocus(val x: Float, val y: Float, val previewSize: Size, val sensorArraySize: Rect) : CameraEvent
     data class OnIsoIndexChanged(val isoIndex: Int) : CameraEvent
     data class OnShutterSpeedIndexChanged(val shutterSpeedIndex: Int) : CameraEvent
 //    data class OnIsoValueChanged(val isoValue: Int) : CameraEvent
@@ -159,12 +171,16 @@ class CameraViewModel(
 
     fun event(cameraEvent: CameraEvent) {
         when (cameraEvent) {
-            CameraEvent.OnTakePhoto -> onTakePhoto()
+            is CameraEvent.OnTakePhoto -> onTakePhoto(cameraEvent.evRange)
             CameraEvent.OnChangeModeClick -> onChangeModeClick()
             CameraEvent.OnIsoButtonClick -> onIsoButtonClick()
             CameraEvent.OnShutterSpeedButtonClick -> onShutterSpeedButtonClick()
             CameraEvent.OnSettingsClick -> onSettingsClick()
+            CameraEvent.OnSeriesButtonClick -> onSeriesButtonClick()
             is CameraEvent.OnIsoIndexChanged -> onIsoIndexChanged(cameraEvent.isoIndex)
+            is CameraEvent.OnCheckboxClick -> onCheckboxClick(cameraEvent.isChecked)
+            is CameraEvent.OnSetFocus -> onSetFocus(cameraEvent.x, cameraEvent.y, cameraEvent.previewSize, cameraEvent.sensorArraySize)
+            is CameraEvent.OnSeriesSizeChanged -> onSeriesSizeChanged(cameraEvent.seriesSize)
             is CameraEvent.OnShutterSpeedIndexChanged -> onShutterSpeedIndexChanged(cameraEvent.shutterSpeedIndex)
 //            is CameraEvent.OnIsoValueChanged -> onIsoValueChanged(cameraEvent.isoValue)
 //            is CameraEvent.OnShutterSpeedValueChanged -> onShutterSpeedValueChanged(cameraEvent.shutterSpeedValue)
@@ -189,6 +205,24 @@ class CameraViewModel(
         _state.tryEmit(
             _state.value.copy(
                 capReq = capReq
+            )
+        )
+    }
+
+    private fun onSeriesButtonClick() {
+        val isShowSeriesSizes = _state.value.isShowSeriesSizes
+        _state.tryEmit(
+            _state.value.copy(
+                isShowSeriesSizes = !isShowSeriesSizes
+            )
+        )
+    }
+
+    private fun onCheckboxClick(isChecked: Boolean) {
+        val i = state.value.photoWithFlash
+        _state.tryEmit(
+            _state.value.copy(
+                photoWithFlash = !isChecked
             )
         )
     }
@@ -233,6 +267,14 @@ class CameraViewModel(
         )
     }
 
+    private fun onSeriesSizeChanged(seriesSize: Int) {
+        _state.tryEmit(
+            _state.value.copy(
+                seriesSize = seriesSize
+            )
+        )
+    }
+
     private fun onChangeModeClick() {
         val isAutoMode = _state.value.isAutoMode
         _state.tryEmit(
@@ -248,7 +290,18 @@ class CameraViewModel(
 
                 cameraCaptureSession?.setRepeatingRequest(capReq!!.build(), null, handler)
             } else {
+                _state.tryEmit(
+                    _state.value.copy(
+                        isoValue = 400,
+                        shutterSpeedValue = 30000000,
+                        isoIndex = CameraParameters.isoValues.indexOf(400),
+                        shutterSpeedIndex = CameraParameters.shutterSpeedValues.indexOf(30000000)
+                    )
+                )
                 capReq?.set(CaptureRequest.CONTROL_AE_MODE, CONTROL_AE_MODE_OFF)
+                capReq?.set(CaptureRequest.SENSOR_SENSITIVITY, 400)
+                capReq?.set(CaptureRequest.SENSOR_EXPOSURE_TIME, 30000000)
+                cameraCaptureSession?.setRepeatingRequest(capReq!!.build(), null, handler)
             }
         }
     }
@@ -287,19 +340,108 @@ class CameraViewModel(
         )
     }
 
+    // не работает, надо чинить
+    private fun onSetFocus(x: Float, y: Float, previewSize: Size, sensorArraySize: Rect) {
+        val focusPoint = CameraParameters.convertToFocusPoint(x, y, previewSize, sensorArraySize)
 
-    private fun onTakePhoto() {
-        val singlePhotoReq = _state.value.cameraDevice?.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE)
+        val singleFocusReq = _state.value.cameraDevice?.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
         with(_state.value){
-            singlePhotoReq?.addTarget(imageReader!!.surface)
-            singlePhotoReq?.set(
-                CaptureRequest.CONTROL_AE_MODE,
-                if(isAutoMode) CONTROL_AE_MODE_ON else CONTROL_AE_MODE_OFF
-            )
-            singlePhotoReq?.set(CaptureRequest.SENSOR_SENSITIVITY, isoValue)
-            singlePhotoReq?.set(CaptureRequest.SENSOR_EXPOSURE_TIME, shutterSpeedValue)
+            singleFocusReq?.addTarget(surface!!)
 
-            cameraCaptureSession?.capture(singlePhotoReq!!.build(), null, null)
+            val meteringAreaSize = 200
+            val meteringRectangle = MeteringRectangle(focusPoint.x.toInt(),
+                focusPoint.y.toInt(), meteringAreaSize, meteringAreaSize, MeteringRectangle.METERING_WEIGHT_MAX)
+            singleFocusReq?.set(CaptureRequest.CONTROL_AF_REGIONS, arrayOf(meteringRectangle))
+
+            singleFocusReq?.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_AUTO)
+            singleFocusReq?.set(CaptureRequest.CONTROL_AF_TRIGGER, CameraMetadata.CONTROL_AF_TRIGGER_START)
+
+            // Отправка запроса на камеру
+            //cameraCaptureSession.capture(captureRequestBuilder.build(), captureCallback, null)
+
+            cameraCaptureSession?.capture(singleFocusReq!!.build(), null, null)
+        }
+    }
+
+
+    // посмотреть внимательно еще раз
+    private fun onTakePhoto(evRange: Range<Int>?) {
+        viewModelScope.launch {
+            if(_state.value.seriesSize == 1){
+                _state.tryEmit(
+                    _state.value.copy(
+                        isCapturing = true
+                    )
+                )
+                val singlePhotoReq = _state.value.cameraDevice?.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE)
+                with(_state.value) {
+                    singlePhotoReq?.addTarget(imageReader!!.surface)
+                    singlePhotoReq?.set(
+                        CaptureRequest.CONTROL_AE_MODE,
+                        if (isAutoMode) CONTROL_AE_MODE_ON else CONTROL_AE_MODE_OFF
+                    )
+                    singlePhotoReq?.set(CaptureRequest.SENSOR_SENSITIVITY, isoValue)
+                    singlePhotoReq?.set(CaptureRequest.SENSOR_EXPOSURE_TIME, shutterSpeedValue)
+
+                    cameraCaptureSession?.capture(singlePhotoReq!!.build(), null, null)
+                }
+
+                _state.tryEmit(
+                    _state.value.copy(
+                        isCapturing = false
+                    )
+                )
+            } else {
+                _state.tryEmit(
+                    _state.value.copy(
+                        isCapturing = true
+                    )
+                )
+                with(_state.value){
+                    val listOfEv = generateEvSeries(seriesSize, evRange!!.lower.toDouble(), evRange.upper.toDouble())
+                    for(ev in listOfEv){
+
+                        capReq?.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
+                        capReq?.set(CaptureRequest.CONTROL_AE_EXPOSURE_COMPENSATION, ev.toInt())
+                        cameraCaptureSession?.setRepeatingRequest(capReq!!.build(), null, handler)
+
+                        delay(1000) // костыль или не костыль???
+                        val singlePhotoReq = cameraDevice?.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE)
+                        singlePhotoReq?.addTarget(imageReader!!.surface)
+                        singlePhotoReq?.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
+                        singlePhotoReq?.set(CaptureRequest.CONTROL_AE_EXPOSURE_COMPENSATION, ev.toInt())
+
+                        cameraCaptureSession?.capture(singlePhotoReq!!.build(), null, null)
+                    }
+
+                    if(photoWithFlash){
+                        capReq?.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON_ALWAYS_FLASH)
+                        capReq?.set(CaptureRequest.CONTROL_AE_EXPOSURE_COMPENSATION, 0)
+                        //capReq?.set(CaptureRequest.CONTROL_AE_PRECAPTURE_TRIGGER, CaptureRequest.CONTROL_AE_PRECAPTURE_TRIGGER_START)
+
+                        cameraCaptureSession?.setRepeatingRequest(capReq!!.build(), null, handler)
+
+                        delay(2000) // костыль или не костыль???
+                        val singlePhotoReq = cameraDevice?.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE)?.apply {
+                            addTarget(imageReader!!.surface)
+                            set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON_ALWAYS_FLASH)
+                            set(CaptureRequest.CONTROL_AE_EXPOSURE_COMPENSATION, 0)
+                            set(CaptureRequest.FLASH_MODE, CaptureRequest.FLASH_MODE_SINGLE)
+
+                            set(CaptureRequest.CONTROL_AE_PRECAPTURE_TRIGGER, CaptureRequest.CONTROL_AE_PRECAPTURE_TRIGGER_START)
+                        }
+                        cameraCaptureSession?.capture(singlePhotoReq!!.build(), null, handler)
+                    }
+                    capReq?.set(CaptureRequest.CONTROL_AE_MODE, CONTROL_AE_MODE_ON)
+                    capReq?.set(CaptureRequest.CONTROL_AE_EXPOSURE_COMPENSATION, 0)
+                    cameraCaptureSession?.setRepeatingRequest(capReq!!.build(), null, handler)
+                }
+                _state.tryEmit(
+                    _state.value.copy(
+                        isCapturing = false
+                    )
+                )
+            }
         }
     }
 

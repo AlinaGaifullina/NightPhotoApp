@@ -7,4 +7,7 @@
     <string name="save_photo_series">Сохранять серию снимков</string>
     <string name="save_photo_series_description">Будет сохранена вся серия снимков</string>
     <string name="night_photo">Ночное фото</string>
+    <string name="choose_series_size">Выберите размер серии</string>
+    <string name="add_photo_with_flash">Добавить фото со вспышкой</string>
+    <string name="wait_photos">Подождите, делаем фотографии</string>
 </resources>

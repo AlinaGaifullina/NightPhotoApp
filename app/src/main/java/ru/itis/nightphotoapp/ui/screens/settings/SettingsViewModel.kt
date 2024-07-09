@@ -52,7 +52,6 @@ class SettingsViewModel(
     }
 
     private fun onCheckboxClick(status: Boolean) {
-        //val isSaveSeries = _state.value.isSaveSeries
         _state.tryEmit(
             _state.value.copy(
                 isSaveSeries = !status

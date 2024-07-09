@@ -1,7 +1,11 @@
 package ru.itis.nightphotoapp
 
+import android.content.Context
 import android.content.pm.PackageManager
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraManager
 import android.os.Bundle
+import android.util.Range
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
@@ -35,6 +39,21 @@ class MainActivity : ComponentActivity() {
             ActivityCompat.requestPermissions(
                 this, CAMERA_PERMISSION, 100
             )
+        }
+
+        fun getEvCompensationRange(context: Context, cameraId: String): Range<Int>? {
+            val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+            val characteristics = cameraManager.getCameraCharacteristics(cameraId)
+            return characteristics.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_RANGE)
+        }
+
+    // Пример использования функции
+        val cameraId = "0" // Замените на актуальный ID камеры
+        val evRange = getEvCompensationRange(applicationContext, cameraId)
+        if (evRange != null) {
+            println("Диапазон компенсации экспозиции: от ${evRange.lower} до ${evRange.upper}")
+        } else {
+            println("Информация о диапазоне компенсации экспозиции не доступна")
         }
 
         setContent {
