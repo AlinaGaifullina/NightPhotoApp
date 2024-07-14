@@ -14,6 +14,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.preferencesDataStore
 import androidx.navigation.compose.rememberNavController
 import ru.itis.nightphotoapp.ui.navigation.RootNavGraph
 import ru.itis.nightphotoapp.ui.theme.NightPhotoAppTheme
@@ -24,7 +27,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
 
         fun arePermissionsGranted(): Boolean {
             return CAMERA_PERMISSION.all { perssion ->

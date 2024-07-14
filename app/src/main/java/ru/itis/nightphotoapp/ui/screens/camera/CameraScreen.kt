@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -331,10 +332,10 @@ fun CameraScreen(
                 .fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            val compensationStep = characteristics.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_STEP)
-            val compensationRange = characteristics.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_RANGE)
-            Text(text = compensationRange.toString(), color = MaterialTheme.colorScheme.onPrimary)
-            Text(text = compensationStep.toString(), color = MaterialTheme.colorScheme.onPrimary)
+//            val compensationStep = characteristics.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_STEP)
+//            val compensationRange = characteristics.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_RANGE)
+//            Text(text = compensationRange.toString(), color = MaterialTheme.colorScheme.onPrimary)
+//            Text(text = compensationStep.toString(), color = MaterialTheme.colorScheme.onPrimary)
 
             if(state.isShowSeriesSizes) {
                 SeriesSizesBox(
@@ -399,9 +400,6 @@ fun generateEvSeries(numberOfShots: Int, minEv: Double, maxEv: Double): List<Dou
     }
 }
 
-// Пример использования функции:
-val evList = generateEvSeries(9, -24.0, 12.0)
-
 fun saveImageToGallery(context: Context, bytes: ByteArray) {
     // Создаем Bitmap из массива байтов
     val originalBitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
@@ -428,7 +426,6 @@ fun saveImageToGallery(context: Context, bytes: ByteArray) {
     val values = ContentValues().apply {
         put(MediaStore.Images.Media.DISPLAY_NAME, imageFileName)
         put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
-        // Добавьте больше метаданных при необходимости
     }
 
     val uri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
@@ -623,14 +620,22 @@ fun SettingsBar(
                 )
                 Box(
                     modifier = Modifier
-                        .clickable { if (!isCapturing) { onIsoClick() } }
+                        .clickable {
+                            if (!isCapturing) {
+                                onIsoClick()
+                            }
+                        }
                         .fillMaxHeight()
                         .weight(1f)
 
                 )
                 Box(
                     modifier = Modifier
-                        .clickable { if (!isCapturing) { onShutterSpeedClick() } }
+                        .clickable {
+                            if (!isCapturing) {
+                                onShutterSpeedClick()
+                            }
+                        }
                         .fillMaxHeight()
                         .weight(1f)
                 )
@@ -704,43 +709,68 @@ fun BottomBar(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .height(60.dp)
-                            .width(60.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(MaterialTheme.colorScheme.onPrimary)
-                    )
-
-                    Icon(
-                        painterResource(R.drawable.ic_take_photo),
-                        modifier = Modifier
-                            .clickable { onTakePhoto() }
-                            .size(80.dp),
-                        contentDescription = "icon",
-                        tint = MaterialTheme.colorScheme.onPrimary
-                    )
 
                     Box(
                         modifier = Modifier
-                            .clickable { onSeriesButtonClick() }
-                    ){
-                        Icon(
-                            painterResource(
-                                if(photoWithFlash) R.drawable.ic_rec_flash else R.drawable.ic_rec
-                            ),
+                            .height(72.dp)
+                            .width(72.dp)
+                    ) {
+                        Box(
                             modifier = Modifier
                                 .align(Alignment.Center)
-                                .size(60.dp),
+                                .height(60.dp)
+                                .width(60.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(MaterialTheme.colorScheme.onPrimary)
+                        )
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .height(72.dp)
+                            .width(72.dp)
+                    ) {
+                        Icon(
+                            painterResource(R.drawable.ic_take_photo),
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .clickable { onTakePhoto() }
+                                .size(80.dp),
                             contentDescription = "icon",
                             tint = MaterialTheme.colorScheme.onPrimary
                         )
+                    }
 
-                        Text(
-                            modifier = Modifier.align(Alignment.Center),
-                            text = photosNumber.toString(),
-                            color = MaterialTheme.colorScheme.onPrimary
-                        )
+                    Box(
+                        modifier = Modifier
+                            .height(72.dp)
+                            .width(72.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .clickable { onSeriesButtonClick() }
+                        ){
+                            Icon(
+                                painterResource(
+                                    if(photoWithFlash) R.drawable.ic_rec_flash else R.drawable.ic_rec
+                                ),
+                                modifier = Modifier
+                                    .align(Alignment.Center)
+                                    .size(if (photoWithFlash) 72.dp else 60.dp)
+                                    .offset(x = (if(photoWithFlash) 6.dp else 0.dp)),
+                                contentDescription = "icon",
+                                tint = MaterialTheme.colorScheme.onPrimary
+                            )
+
+                            Text(
+                                modifier = Modifier
+                                    .align(Alignment.Center),
+                                text = photosNumber.toString(),
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                fontSize = 20.sp
+                            )
+                        }
                     }
                 }
             }

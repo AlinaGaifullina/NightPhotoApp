@@ -1,5 +1,6 @@
 package ru.itis.nightphotoapp.ui.screens.settings
 
+import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -29,10 +30,17 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.preferencesDataStore
 import androidx.navigation.NavController
+import kotlinx.coroutines.flow.Flow
 import org.koin.androidx.compose.koinViewModel
 import ru.itis.nightphotoapp.R
 import ru.itis.nightphotoapp.ui.navigation.RootGraph
+
+
 
 @Composable
 fun SettingsScreen(
@@ -42,6 +50,20 @@ fun SettingsScreen(
     val state by viewModel.state.collectAsState()
     val eventHandler = viewModel::event
     val action by viewModel.action.collectAsState(null)
+
+    val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
+
+    suspend fun saveAutoExposureMode(context: Context, isEnabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.AUTO_EXPOSURE_MODE] = isEnabled
+        }
+    }
+
+    val isSaveSeriesFlow: Flow<Boolean> = context.dataStore.data
+        .map { preferences ->
+            preferences[PreferencesKeys.AUTO_EXPOSURE_MODE] ?: false
+        }
+
 
     LaunchedEffect(action) {
         when (action) {
@@ -64,8 +86,6 @@ fun SettingsScreen(
                 )
             }
         )
-        Text(text = state.isSaveSeries.toString(),
-            color = MaterialTheme.colorScheme.primary)
 
         SettingsContent(
             isCheckboxClick = state.isSaveSeries,
@@ -205,5 +225,8 @@ fun SettingsContent(
 
         }
     }
+}
 
+object PreferencesKeys {
+    val AUTO_EXPOSURE_MODE = booleanPreferencesKey("is_save_series")
 }
