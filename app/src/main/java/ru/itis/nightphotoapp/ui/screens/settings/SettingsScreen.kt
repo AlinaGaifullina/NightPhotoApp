@@ -51,18 +51,18 @@ fun SettingsScreen(
     val eventHandler = viewModel::event
     val action by viewModel.action.collectAsState(null)
 
-    val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
-
-    suspend fun saveAutoExposureMode(context: Context, isEnabled: Boolean) {
-        context.dataStore.edit { preferences ->
-            preferences[PreferencesKeys.AUTO_EXPOSURE_MODE] = isEnabled
-        }
-    }
-
-    val isSaveSeriesFlow: Flow<Boolean> = context.dataStore.data
-        .map { preferences ->
-            preferences[PreferencesKeys.AUTO_EXPOSURE_MODE] ?: false
-        }
+//    val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
+//
+//    suspend fun saveAutoExposureMode(context: Context, isEnabled: Boolean) {
+//        context.dataStore.edit { preferences ->
+//            preferences[PreferencesKeys.AUTO_EXPOSURE_MODE] = isEnabled
+//        }
+//    }
+//
+//    val isSaveSeriesFlow: Flow<Boolean> = context.dataStore.data
+//        .map { preferences ->
+//            preferences[PreferencesKeys.AUTO_EXPOSURE_MODE] ?: false
+//        }
 
 
     LaunchedEffect(action) {

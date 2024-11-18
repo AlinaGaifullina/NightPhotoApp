@@ -86,23 +86,6 @@ class AutoFitTextureView @JvmOverloads constructor(
     private var ratioWidth = 0
     private var ratioHeight = 0
 
-    /**
-     * Sets the aspect ratio for this view. The size of the view will be measured based on the ratio
-     * calculated from the parameters. Note that the actual sizes of parameters don't matter, that
-     * is, calling setAspectRatio(2, 3) and setAspectRatio(4, 6) make the same result.
-     *
-     * @param width  Relative horizontal size
-     * @param height Relative vertical size
-     */
-    fun setAspectRatio(width: Int, height: Int) {
-        if (width < 0 || height < 0) {
-            throw IllegalArgumentException("Size cannot be negative.")
-        }
-        ratioWidth = width
-        ratioHeight = height
-        requestLayout()
-    }
-
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         super.onMeasure(widthMeasureSpec, heightMeasureSpec)
         val width = View.MeasureSpec.getSize(widthMeasureSpec)
@@ -169,7 +152,6 @@ fun CameraScreen(
             LinearLayout.LayoutParams.MATCH_PARENT
         )
 
-        //setAspectRatio(3, 4)
         surfaceTextureListener = object : TextureView.SurfaceTextureListener {
             override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
 
@@ -225,17 +207,38 @@ fun CameraScreen(
     matrix.setScale(1.2f, 1.0f)
     state.textureView?.setTransform(matrix)
 
+
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
     ) {
+
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .align(Alignment.TopCenter),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+
+            // проверка правильного отображения битмапов
+//            Box(
+//                modifier = Modifier.fillMaxWidth()
+//            ) {
+//                if (state.bitmapList.lastOrNull() != null) {
+//                    Image(
+//                        bitmap = state.bitmapList.last().asImageBitmap(),
+//                        contentDescription = null, // Укажите описание, если необходимо
+//                        modifier = Modifier
+//                            .fillMaxWidth()
+//                            .height(300.dp) // Задайте высоту по вашему усмотрению
+//                    )
+//                } else {
+//                    // Здесь вы можете отобразить изображение по умолчанию или скрыть элемент
+//                    Text(state.bitmapList.size.toString())
+//                }
+//
+//            }
             SettingsBar(
                 modifier = Modifier,
                 state = state,
@@ -320,9 +323,7 @@ fun CameraScreen(
                     }
                     SliderStatus.HIDE -> Text(text = "")
                 }
-
             }
-
             eventHandler.invoke(CameraEvent.OnTextureViewChanged(textureView))
         }
 
@@ -360,14 +361,21 @@ fun CameraScreen(
                 photoWithFlash = state.photoWithFlash,
                 photosNumber = state.seriesSize,
                 isCapturing = state.isCapturing,
+                isGenerating = state.isGenerating,
+                generatedImage = state.generatedImage,
+                appContext = appContext,
                 onTakePhoto = {
+
                     state.imageReader?.setOnImageAvailableListener({ p0 ->
                         val image = p0?.acquireLatestImage()
                         val buffer = image!!.planes[0].buffer
                         val bytes = ByteArray(buffer.remaining())
                         buffer.get(bytes)
 
-                        saveImageToGallery(appContext, bytes)
+                        val bitmap = saveImageToGallery(appContext, bytes)
+                        eventHandler.invoke(
+                            CameraEvent.OnBitmapListChanged(bitmap)
+                        )
 
                         image.close()
                     }, state.handler)
@@ -380,10 +388,21 @@ fun CameraScreen(
                     eventHandler.invoke(
                         CameraEvent.OnSeriesButtonClick
                     )
+                },
+                onClearGeneratedImage = {
+                    eventHandler.invoke(
+                        CameraEvent.OnClearGeneratedImage
+                    )
                 }
             )
         }
     }
+}
+
+fun Bitmap.toByteArray(): ByteArray {
+    val stream = ByteArrayOutputStream()
+    this.compress(Bitmap.CompressFormat.JPEG, 100, stream)
+    return stream.toByteArray()
 }
 
 fun generateEvSeries(numberOfShots: Int, minEv: Double, maxEv: Double): List<Double> {
@@ -400,7 +419,8 @@ fun generateEvSeries(numberOfShots: Int, minEv: Double, maxEv: Double): List<Dou
     }
 }
 
-fun saveImageToGallery(context: Context, bytes: ByteArray) {
+
+fun saveImageToGallery(context: Context, bytes: ByteArray) : Bitmap {
     // Создаем Bitmap из массива байтов
     val originalBitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
 
@@ -438,17 +458,12 @@ fun saveImageToGallery(context: Context, bytes: ByteArray) {
             outputStream?.close()
         }
     }
+    val bitmapCopy = rotatedBitmap.copy(rotatedBitmap.config, true)
 
     // Освобождаем ресурсы
     originalBitmap.recycle()
     rotatedBitmap.recycle()
-}
-
-// Вспомогательная функция для конвертации Bitmap в массив байтов
-fun Bitmap.toByteArray(): ByteArray {
-    val stream = ByteArrayOutputStream()
-    this.compress(Bitmap.CompressFormat.JPEG, 100, stream)
-    return stream.toByteArray()
+    return bitmapCopy
 }
 
 @Composable
@@ -591,7 +606,6 @@ fun SettingsBar(
                 .fillMaxWidth()
                 .height(80.dp)
         ) {
-
             if (state.isAutoMode){
                 Box(
                     modifier = Modifier
@@ -627,7 +641,6 @@ fun SettingsBar(
                         }
                         .fillMaxHeight()
                         .weight(1f)
-
                 )
                 Box(
                     modifier = Modifier
@@ -655,9 +668,17 @@ fun BottomBar(
     photoWithFlash: Boolean,
     photosNumber: Int,
     isCapturing: Boolean,
+    isGenerating: Boolean,
+    generatedImage: Bitmap?,
+    appContext: Context,
     onTakePhoto: () -> Unit,
-    onSeriesButtonClick: () -> Unit
+    onSeriesButtonClick: () -> Unit,
+    onClearGeneratedImage: () -> Unit
 ){
+    if (generatedImage != null){
+        saveImageToGallery(appContext, generatedImage.toByteArray())
+        onClearGeneratedImage()
+    }
 
     Box(
         modifier = modifier
@@ -665,7 +686,7 @@ fun BottomBar(
             .height(210.dp)
             .background(MaterialTheme.colorScheme.primary)
     ) {
-        if(isCapturing){
+        if(isCapturing && !isGenerating){
             Column(
                 modifier = Modifier
                     .padding(top = 16.dp)
@@ -680,6 +701,24 @@ fun BottomBar(
                 CircularProgressIndicator(
                     modifier = Modifier,
                     color = MaterialTheme.colorScheme.onPrimary
+                )
+            }
+        } else if(isGenerating && isCapturing) {
+            Column(
+                modifier = Modifier
+                    .padding(top = 16.dp)
+                    .fillMaxWidth()
+                    .align(Alignment.Center),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = stringResource(id = R.string.generating_image),
+                    color = MaterialTheme.colorScheme.onPrimary
+                )
+                CircularProgressIndicator(
+                    modifier = Modifier,
+                    color = MaterialTheme.colorScheme.onPrimary,
+
                 )
             }
         } else {
@@ -734,7 +773,9 @@ fun BottomBar(
                             painterResource(R.drawable.ic_take_photo),
                             modifier = Modifier
                                 .align(Alignment.Center)
-                                .clickable { onTakePhoto() }
+                                .clickable {
+                                    onTakePhoto()
+                                }
                                 .size(80.dp),
                             contentDescription = "icon",
                             tint = MaterialTheme.colorScheme.onPrimary
@@ -758,7 +799,7 @@ fun BottomBar(
                                 modifier = Modifier
                                     .align(Alignment.Center)
                                     .size(if (photoWithFlash) 72.dp else 60.dp)
-                                    .offset(x = (if(photoWithFlash) 6.dp else 0.dp)),
+                                    .offset(x = (if (photoWithFlash) 6.dp else 0.dp)),
                                 contentDescription = "icon",
                                 tint = MaterialTheme.colorScheme.onPrimary
                             )

@@ -10,4 +10,5 @@
     <string name="choose_series_size">Выберите размер серии</string>
     <string name="add_photo_with_flash">Добавить фото со вспышкой</string>
     <string name="wait_photos">Подождите, делаем фотографии</string>
+    <string name="generating_image">Генерируем изображение</string>
 </resources>

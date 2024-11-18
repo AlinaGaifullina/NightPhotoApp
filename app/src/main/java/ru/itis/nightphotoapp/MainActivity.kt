@@ -5,7 +5,9 @@ import android.content.pm.PackageManager
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.os.Bundle
+import android.util.Log
 import android.util.Range
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
@@ -18,6 +20,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStore
 import androidx.navigation.compose.rememberNavController
+import org.opencv.android.OpenCVLoader
 import ru.itis.nightphotoapp.ui.navigation.RootNavGraph
 import ru.itis.nightphotoapp.ui.theme.NightPhotoAppTheme
 
@@ -27,6 +30,15 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        if (OpenCVLoader.initLocal()) {
+            Log.i("loaded", "OpenCV loaded successfully");
+            (Toast.makeText(this, "OpenCV initialization suc!", Toast.LENGTH_LONG)).show();
+        } else {
+            Log.e("loaded", "OpenCV initialization failed!");
+            (Toast.makeText(this, "OpenCV initialization failed!", Toast.LENGTH_LONG)).show();
+            return;
+        }
 
         fun arePermissionsGranted(): Boolean {
             return CAMERA_PERMISSION.all { perssion ->
@@ -49,8 +61,8 @@ class MainActivity : ComponentActivity() {
             return characteristics.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_RANGE)
         }
 
-    // Пример использования функции
-        val cameraId = "0" // Замените на актуальный ID камеры
+
+        val cameraId = "0"
         val evRange = getEvCompensationRange(applicationContext, cameraId)
         if (evRange != null) {
             println("Диапазон компенсации экспозиции: от ${evRange.lower} до ${evRange.upper}")

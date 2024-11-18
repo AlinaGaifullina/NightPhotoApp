@@ -1,6 +1,7 @@
 package ru.itis.nightphotoapp.ui.screens.camera
 
 import android.content.ContentValues.TAG
+import android.graphics.Bitmap
 import android.graphics.ImageFormat
 import android.graphics.Rect
 import android.hardware.camera2.CameraCaptureSession
@@ -37,6 +38,7 @@ import ru.itis.nightphotoapp.utils.SliderStatus
 data class CameraState(
     val seriesSize: Int = 3,
     val isCapturing: Boolean = false,
+    val isGenerating: Boolean = false,
     val photoWithFlash: Boolean = false,
     val isShowSeriesSizes: Boolean = false,
     val isoIndex: Int = 0,
@@ -54,7 +56,9 @@ data class CameraState(
     val handler: Handler? = null,
     val handlerThread: HandlerThread = HandlerThread("CameraVideoThread" ),
     val cameraDevice: CameraDevice? = null,
-    val imageReader: ImageReader? = null
+    val imageReader: ImageReader? = null,
+    val bitmapList: List<Bitmap> = emptyList(),
+    val generatedImage: Bitmap? = null
 )
 
 sealed interface CameraSideEffect {
@@ -63,6 +67,7 @@ sealed interface CameraSideEffect {
 
 sealed interface CameraEvent {
     data class OnTakePhoto(val evRange: Range<Int>?) : CameraEvent
+    object OnClearGeneratedImage : CameraEvent
     object OnChangeModeClick : CameraEvent
     object OnIsoButtonClick : CameraEvent
     object OnShutterSpeedButtonClick : CameraEvent
@@ -79,11 +84,10 @@ sealed interface CameraEvent {
     data class OnCaptureRequestChanged(val capReq: CaptureRequest.Builder) : CameraEvent
     data class OnCameraCaptureSessionChanged(val cameraCaptureSession: CameraCaptureSession) : CameraEvent
     data class OnSliderStatusChanged(val sliderStatus: SliderStatus) : CameraEvent
+    data class OnBitmapListChanged(val newBitmap: Bitmap) : CameraEvent
 }
 
-class CameraViewModel(
-    private val cameraRepository: CameraRepository
-) : ViewModel() {
+class CameraViewModel() : ViewModel() {
 
     private val _state: MutableStateFlow<CameraState> = MutableStateFlow(CameraState())
     val state: StateFlow<CameraState> = _state
@@ -93,7 +97,6 @@ class CameraViewModel(
         get() = _action.asSharedFlow()
 
     init {
-
         viewModelScope.launch {
             _state.value.handlerThread.start()
             _state.tryEmit(
@@ -172,6 +175,7 @@ class CameraViewModel(
     fun event(cameraEvent: CameraEvent) {
         when (cameraEvent) {
             is CameraEvent.OnTakePhoto -> onTakePhoto(cameraEvent.evRange)
+            CameraEvent.OnClearGeneratedImage -> onClearGeneratedImage()
             CameraEvent.OnChangeModeClick -> onChangeModeClick()
             CameraEvent.OnIsoButtonClick -> onIsoButtonClick()
             CameraEvent.OnShutterSpeedButtonClick -> onShutterSpeedButtonClick()
@@ -182,16 +186,14 @@ class CameraViewModel(
             is CameraEvent.OnSetFocus -> onSetFocus(cameraEvent.x, cameraEvent.y, cameraEvent.previewSize, cameraEvent.sensorArraySize)
             is CameraEvent.OnSeriesSizeChanged -> onSeriesSizeChanged(cameraEvent.seriesSize)
             is CameraEvent.OnShutterSpeedIndexChanged -> onShutterSpeedIndexChanged(cameraEvent.shutterSpeedIndex)
-//            is CameraEvent.OnIsoValueChanged -> onIsoValueChanged(cameraEvent.isoValue)
-//            is CameraEvent.OnShutterSpeedValueChanged -> onShutterSpeedValueChanged(cameraEvent.shutterSpeedValue)
             is CameraEvent.OnTextureViewChanged -> onTextureViewChanged(cameraEvent.textureView)
             is CameraEvent.OnCaptureRequestChanged -> onCaptureRequestChanged(cameraEvent.capReq)
             is CameraEvent.OnCameraCaptureSessionChanged -> onCameraCaptureSessionChanged(cameraEvent.cameraCaptureSession)
             is CameraEvent.OnSliderStatusChanged -> onSliderStatusChanged(cameraEvent.sliderStatus)
+            is CameraEvent.OnBitmapListChanged -> onBitmapListChanged(cameraEvent.newBitmap)
 
         }
     }
-
 
     private fun onSettingsClick() {
         viewModelScope.launch {
@@ -205,6 +207,14 @@ class CameraViewModel(
         _state.tryEmit(
             _state.value.copy(
                 capReq = capReq
+            )
+        )
+    }
+
+    private fun onClearGeneratedImage() {
+        _state.tryEmit(
+            _state.value.copy(
+                generatedImage = null
             )
         )
     }
@@ -235,18 +245,13 @@ class CameraViewModel(
         )
     }
 
-    private fun onHandlerThreadChanged(handlerThread: HandlerThread) {
+    private fun onBitmapListChanged(newBitmap: Bitmap) {
+        val bitmapList = _state.value.bitmapList
+        val newList = bitmapList.toMutableList()
+        newList.add(newBitmap)
         _state.tryEmit(
             _state.value.copy(
-                handlerThread = handlerThread
-            )
-        )
-    }
-
-    private fun onHandlerChanged(handler: Handler) {
-        _state.tryEmit(
-            _state.value.copy(
-                handler = handler
+                bitmapList = newList
             )
         )
     }
@@ -363,9 +368,9 @@ class CameraViewModel(
         }
     }
 
-
     // посмотреть внимательно еще раз
     private fun onTakePhoto(evRange: Range<Int>?) {
+
         viewModelScope.launch {
             if(_state.value.seriesSize == 1){
                 _state.tryEmit(
@@ -391,12 +396,15 @@ class CameraViewModel(
                         isCapturing = false
                     )
                 )
+
             } else {
+
                 _state.tryEmit(
                     _state.value.copy(
                         isCapturing = true
                     )
                 )
+
                 with(_state.value){
                     val listOfEv = generateEvSeries(seriesSize, evRange!!.lower.toDouble(), evRange.upper.toDouble())
                     for(ev in listOfEv){
@@ -436,9 +444,27 @@ class CameraViewModel(
                     capReq?.set(CaptureRequest.CONTROL_AE_EXPOSURE_COMPENSATION, 0)
                     cameraCaptureSession?.setRepeatingRequest(capReq!!.build(), null, handler)
                 }
+
                 _state.tryEmit(
                     _state.value.copy(
-                        isCapturing = false
+                        isGenerating = true
+                    )
+                )
+
+                val generatedImage = CameraParameters.fuseImages(state.value.bitmapList)
+                delay(2000)
+
+                _state.tryEmit(
+                    _state.value.copy(
+                        generatedImage = generatedImage,
+                        isGenerating = false,
+                        bitmapList = emptyList()
+                    )
+                )
+
+                _state.tryEmit(
+                    _state.value.copy(
+                        isCapturing = false,
                     )
                 )
             }
