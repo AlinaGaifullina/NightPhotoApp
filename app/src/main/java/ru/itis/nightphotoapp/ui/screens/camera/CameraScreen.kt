@@ -2,6 +2,7 @@ package ru.itis.nightphotoapp.ui.screens.camera
 
 import android.content.ContentValues
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
@@ -21,6 +22,7 @@ import android.view.TextureView
 import android.view.View
 import android.view.WindowManager
 import android.widget.LinearLayout
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -54,6 +56,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -221,6 +224,14 @@ fun CameraScreen(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
 
+//            if(state.isGenerating){
+//                val images = stabilizeImages(state.bitmapList)
+//
+//                for(i in images){
+//                    saveImageToGallery(appContext, i.toByteArray())
+//                }
+//            }
+
             // проверка правильного отображения битмапов
 //            Box(
 //                modifier = Modifier.fillMaxWidth()
@@ -363,6 +374,7 @@ fun CameraScreen(
                 isCapturing = state.isCapturing,
                 isGenerating = state.isGenerating,
                 generatedImage = state.generatedImage,
+                generatedImageIcon = state.generatedImageIcon,
                 appContext = appContext,
                 onTakePhoto = {
 
@@ -393,6 +405,9 @@ fun CameraScreen(
                     eventHandler.invoke(
                         CameraEvent.OnClearGeneratedImage
                     )
+                },
+                onOpenGallery = {
+                    openGallery(appContext)
                 }
             )
         }
@@ -464,6 +479,15 @@ fun saveImageToGallery(context: Context, bytes: ByteArray) : Bitmap {
     originalBitmap.recycle()
     rotatedBitmap.recycle()
     return bitmapCopy
+}
+
+// Функция для открытия галереи
+private fun openGallery(context: Context) {
+    val intent = Intent(Intent.ACTION_PICK).apply {
+        type = "image/*" // Указываем тип, который хотим открыть
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) // Добавляем флаг здесь
+    }
+    context.startActivity(Intent.createChooser(intent, "Выберите изображение"))
 }
 
 @Composable
@@ -670,11 +694,14 @@ fun BottomBar(
     isCapturing: Boolean,
     isGenerating: Boolean,
     generatedImage: Bitmap?,
+    generatedImageIcon: Bitmap?,
     appContext: Context,
     onTakePhoto: () -> Unit,
     onSeriesButtonClick: () -> Unit,
-    onClearGeneratedImage: () -> Unit
+    onClearGeneratedImage: () -> Unit,
+    onOpenGallery: () -> Unit
 ){
+
     if (generatedImage != null){
         saveImageToGallery(appContext, generatedImage.toByteArray())
         onClearGeneratedImage()
@@ -761,7 +788,35 @@ fun BottomBar(
                                 .width(60.dp)
                                 .clip(RoundedCornerShape(16.dp))
                                 .background(MaterialTheme.colorScheme.onPrimary)
-                        )
+                                .clickable { onOpenGallery() }
+                        ) {
+                            if (generatedImageIcon != null) {
+                                // Отображаем изображение из Bitmap
+                                Image(
+                                    bitmap = generatedImageIcon.asImageBitmap(),
+                                    contentDescription = null,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            } else {
+                                // Отображаем изображение из drawable ресурсов
+                                Image(
+                                    painter = painterResource(id = R.drawable.ic_camera),
+                                    contentDescription = null,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
+                        }
+//                        Icon(
+//                            painterResource(R.drawable.ic_take_photo),
+//                            modifier = Modifier
+//                                .align(Alignment.Center)
+//                                .clickable {
+//                                    onTakePhoto()
+//                                }
+//                                .size(80.dp),
+//                            contentDescription = "icon",
+//                            tint = MaterialTheme.colorScheme.onPrimary
+//                        )
                     }
 
                     Box(

@@ -10,10 +10,18 @@ import android.hardware.camera2.CameraManager
 import android.util.Range
 import android.util.Size
 import org.opencv.android.Utils
+import org.opencv.calib3d.Calib3d
+import org.opencv.core.Core.NORM_L2
 import org.opencv.core.CvType
 import org.opencv.core.Mat
+import org.opencv.core.MatOfDMatch
+import org.opencv.core.MatOfKeyPoint
+import org.opencv.core.MatOfPoint2f
+import org.opencv.features2d.BFMatcher
+import org.opencv.features2d.SIFT
 import org.opencv.imgproc.Imgproc
 import org.opencv.photo.Photo
+import java.nio.ByteBuffer
 
 class CameraParameters {
 
@@ -188,6 +196,107 @@ class CameraParameters {
             }
 
             return matToBitmap(fusedImage)
+        }
+
+        fun bitmapToMat2(bitmap: Bitmap): Mat {
+            val mat = Mat(bitmap.height, bitmap.width, CvType.CV_8UC4)
+            val bytes = ByteArray(bitmap.byteCount)
+            bitmap.copyPixelsToBuffer(ByteBuffer.wrap(bytes))
+            mat.put(0, 0, bytes)
+            return mat
+        }
+
+        fun matToBitmap2(mat: Mat): Bitmap {
+            val bitmap = Bitmap.createBitmap(mat.cols(), mat.rows(), Bitmap.Config.ARGB_8888)
+            val bytes = ByteArray(mat.cols() * mat.rows() * 4)
+            mat.get(0, 0, bytes)
+            bitmap.copyPixelsFromBuffer(ByteBuffer.wrap(bytes))
+            return bitmap
+        }
+
+        fun stabilizeImages(images: List<Bitmap>): List<Bitmap> {
+            // Convert Bitmaps to Mats
+            val mats = images.map { bitmapToMat2(it) }
+
+// Detect SIFT features in each image
+            val sift = SIFT.create()
+
+            val keypoints = mutableListOf<MatOfKeyPoint>()
+            mats.forEachIndexed { i, m ->
+                val kp = MatOfKeyPoint()
+                sift.detect(m, kp)
+                keypoints.add(kp)
+                println("Количество ключевых точек в изображении $i: ${kp.toList().size}") // Отладка
+            }
+
+            val descriptors = mats.indices.map { i ->
+                val descriptor = Mat()
+                sift.compute(mats[i], keypoints[i], descriptor)
+                descriptor
+            }
+
+// Find the central image
+            val centralIndex = mats.size / 2
+            val centralImage = mats[centralIndex]
+
+// Compute the homography matrix for each image relative to the central image
+            val homographies = mats.indices.map { i ->
+                if (i == centralIndex) {
+                    Mat.eye(3, 3, CvType.CV_64FC1)
+                } else {
+                    // Создание экземпляра BFMatcher
+                    val matcher = BFMatcher.create(NORM_L2, true)
+
+                    // Создание MatOfDMatch для хранения совпадений
+                    val matches = MatOfDMatch()
+
+                    // Выполнение сопоставления
+                    matcher.match(descriptors[i], descriptors[centralIndex], matches)
+
+                    // Преобразование MatOfDMatch в список DMatch
+                    val matchesList = matches.toList()
+
+                    // Фильтруем хорошие совпадения
+                    val goodMatches = matchesList.filter { it.distance < 70.0 } // Уменьшите порог
+
+                    // Извлекаем исходные и целевые точки
+                    val srcPointsList = goodMatches.map { keypoints[i].toList()[it.queryIdx].pt }
+                    val dstPointsList = goodMatches.map { keypoints[centralIndex].toList()[it.trainIdx].pt }
+
+                    // Вывод количества точек для отладки
+                    println("Количество хороших совпадений: ${goodMatches.size}")
+                    println("Количество исходных точек: ${srcPointsList.size}")
+                    println("Количество целевых точек: ${dstPointsList.size}")
+
+                    // Проверка на количество точек
+                    if (srcPointsList.size < 4 || dstPointsList.size < 4) {
+                        throw IllegalArgumentException("Необходимо минимум 4 точки для вычисления гомографии.")
+                    }
+
+                    // Преобразование списков точек в MatOfPoint2f
+                    val srcPoints = MatOfPoint2f(*srcPointsList.toTypedArray())
+                    val dstPoints = MatOfPoint2f(*dstPointsList.toTypedArray())
+
+                    // Создание маски
+                    val mask = Mat()
+
+                    // Находим гомографию
+                    val homography = Calib3d.findHomography(srcPoints, dstPoints, Calib3d.RANSAC, 3.0, mask, 2000)
+
+                    // Используйте полученную гомографию (например, для трансформации изображений)
+                    println("Гомография: $homography")
+                    homography
+                }
+            }
+
+            // Warp each image to the central image
+            val stabilizedImages = mats.mapIndexed { i, mat ->
+                val warpedMat = Mat()
+                Imgproc.warpPerspective(mat, warpedMat, homographies[i], mat.size())
+                matToBitmap2(warpedMat)
+            }
+
+            return stabilizedImages
         }
     }
 }
